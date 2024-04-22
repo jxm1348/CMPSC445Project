@@ -58,13 +58,19 @@ model.compile(optimizer=RMSprop(learning_rate=0.001, rho=0.9), loss='mse')
 # Early stopping callback to avoid overfitting
 early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
+# Add a custom callback to print loss after each epoch
+class LossHistory(tf.keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs={}):
+        print("Epoch:", epoch + 1, "Loss:", logs['loss'], "Validation Loss:", logs['val_loss'])
+
+
 # Training the model with early stopping
 model.fit(
     X_train, y_train,
     epochs=100,  # Increased epochs, but early stopping will prevent overfitting
     batch_size=32,
     validation_data=(X_test, y_test),
-    callbacks=[early_stopping],  # Include the early stopping callback here
+    callbacks=[early_stopping, LossHistory()],  # Include the early stopping callback here
     verbose=1
 )
 
@@ -75,8 +81,19 @@ predicted_sales = scaler.inverse_transform(predicted_sales)  # Rescaling back to
 # might want to also rescale y_test for comparison or further use
 y_test_rescaled = scaler.inverse_transform(y_test)
 
+print("Actual Sales:", y_test_rescaled)
+print("Predicted Sales:", predicted_sales)
+
+from sklearn.metrics import mean_squared_error
+# Calculate and print MSE
+mse = mean_squared_error(y_test_rescaled, predicted_sales)
+print("Mean Squared Error on Test Set:", mse)
+
 # Showing model structure and summary
 model.summary()
+
+# Print model summary
+model.summary(print_fn=lambda x: print(x))
 
 
 import matplotlib.pyplot as plt
@@ -100,6 +117,10 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
+# Print predictions
+#print("Actual Sales:", y_test_rescaled)
+#print("Predicted Sales:", predicted_sales)
+
 # Figure for PHEV Sales Predictions
 plt.figure(figsize=(16, 6))  # Separate figure with increased width
 plt.plot(test_dates, y_test_rescaled[:, 1], label='Actual PHEV Sales')
@@ -113,6 +134,10 @@ plt.xticks(rotation=45)  # Rotate date labels for better readability
 plt.legend()
 plt.tight_layout()
 plt.show()
+
+# Print predictions
+#print("Actual Sales:", y_test_rescaled)
+#print("Predicted Sales:", predicted_sales)
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -140,9 +165,15 @@ future_predictions = predict_future_months(model, last_sequence, n_future_months
 # Rescale predictions back to original scale
 future_predictions_rescaled = scaler.inverse_transform(future_predictions)
 
+
 # Prepare dates for plotting future predictions
 last_date = data['Date'].iloc[-1]
 future_dates = date_range(start=last_date, periods=n_future_months + 1, freq='M')[1:]
+
+# Print future predictions to console
+print("Future Predictions for BEV and PHEV:")
+for date, prediction in zip(future_dates, future_predictions_rescaled):
+    print(f"{date.strftime('%Y-%m')}: BEV={prediction[0]}, PHEV={prediction[1]}")
 
 # Plotting the future predictions for BEV in its own window
 plt.figure(figsize=(16, 6))
