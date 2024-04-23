@@ -1,10 +1,15 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.linear_model import LinearRegression
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from pandas import date_range
+from sklearn.metrics import mean_squared_error
 
 # Load the data from CSV file
 data = pd.read_csv("electric_vehicle_sales.csv")
@@ -84,7 +89,6 @@ y_test_rescaled = scaler.inverse_transform(y_test)
 print("Actual Sales:", y_test_rescaled)
 print("Predicted Sales:", predicted_sales)
 
-from sklearn.metrics import mean_squared_error
 # Calculate and print MSE
 mse = mean_squared_error(y_test_rescaled, predicted_sales)
 print("Mean Squared Error on Test Set:", mse)
@@ -96,8 +100,6 @@ model.summary()
 model.summary(print_fn=lambda x: print(x))
 
 
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 
 # 'data' still has the 'Date' column correctly set to datetime types
 # Extracting the dates corresponding to the test set predictions:
@@ -139,16 +141,16 @@ plt.show()
 #print("Actual Sales:", y_test_rescaled)
 #print("Predicted Sales:", predicted_sales)
 
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from pandas import date_range
 
 # Function to predict future months
 def predict_future_months(model, initial_sequence, n_future_months):
     future_predictions = []
     current_sequence = initial_sequence
     for _ in range(n_future_months):
-        next_step = model.predict(current_sequence[np.newaxis, :, :])
+        if isinstance(model, Sequential):  #if LSTM model
+            next_step = model.predict(current_sequence[np.newaxis, :, :])
+        else:  # If linear regression
+            next_step = model.predict(current_sequence.reshape(1, -1))
         future_predictions.append(next_step[0])
         current_sequence = np.vstack([current_sequence[1:], next_step])
     return np.array(future_predictions)
@@ -194,6 +196,105 @@ plt.plot(future_dates, future_predictions_rescaled[:, 1], label='Future PHEV Sal
 plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
 plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
 plt.title('Future PHEV Sales Prediction')
+plt.xlabel('Date')
+plt.ylabel('Sales')
+plt.xticks(rotation=45)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+X_train_flat = X_train.reshape(X_train.shape[0], -1)
+X_test_flat = X_test.reshape(X_test.shape[0], -1)
+
+
+# Training linear regression model
+linear_reg_model = LinearRegression()
+linear_reg_model.fit(X_train_flat, y_train)
+
+# Make predictions using linear regression
+predicted_sales_linear = linear_reg_model.predict(X_test_flat)
+
+# Rescale predictions back to original scale
+predicted_sales_linear_rescaled = scaler.inverse_transform(predicted_sales_linear)
+
+# Compare the predictions of linear regression with LSTM model
+print("Mean Squared Error on Test Set (Linear Regression):", mean_squared_error(y_test_rescaled, predicted_sales_linear_rescaled))
+
+# Plotting the comparison of LSTM and linear regression predictions for BEV
+plt.figure(figsize=(16, 6))
+plt.plot(test_dates, y_test_rescaled[:, 0], label='Actual BEV Sales', color='blue')
+plt.plot(test_dates, predicted_sales[:, 0], label='LSTM Predicted BEV Sales', linestyle='--', color='red')
+plt.plot(test_dates, predicted_sales_linear_rescaled[:, 0], label='Linear Regression Predicted BEV Sales', linestyle='--', color='green')
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+plt.title('BEV Sales Prediction Comparison (LSTM vs Linear Regression)')
+plt.xlabel('Date')
+plt.ylabel('Sales')
+plt.xticks(rotation=45)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# Plotting the comparison of LSTM and linear regression predictions for PHEV
+plt.figure(figsize=(16, 6))
+plt.plot(test_dates, y_test_rescaled[:, 1], label='Actual PHEV Sales', color='blue')
+plt.plot(test_dates, predicted_sales[:, 1], label='LSTM Predicted PHEV Sales', linestyle='--', color='red')
+plt.plot(test_dates, predicted_sales_linear_rescaled[:, 1], label='Linear Regression Predicted PHEV Sales', linestyle='--', color='green')
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+plt.title('PHEV Sales Prediction Comparison (LSTM vs Linear Regression)')
+plt.xlabel('Date')
+plt.ylabel('Sales')
+plt.xticks(rotation=45)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# Number of future months to predict
+n_future_months = 12
+
+# Get the last sequence from the data (last n_steps data points)
+last_sequence_linear = X[-1]
+
+# Generate future predictions for BEV and PHEV using linear regression model
+future_predictions_linear = predict_future_months(linear_reg_model, last_sequence_linear, n_future_months)
+
+# Rescale predictions back to original scale
+future_predictions_linear_rescaled = scaler.inverse_transform(future_predictions_linear)
+
+# Prepare dates for plotting future predictions
+last_date = data['Date'].iloc[-1]
+future_dates_linear = date_range(start=last_date, periods=n_future_months + 1, freq='M')[1:]
+
+# Print future predictions to console
+print("Future Predictions for BEV and PHEV (Linear Regression):")
+for date, prediction in zip(future_dates_linear, future_predictions_linear_rescaled):
+    print(f"{date.strftime('%Y-%m')}: BEV={prediction[0]}, PHEV={prediction[1]}")
+
+# Reshape future predictions from LSTM model for compatibility with linear regression predictions
+future_predictions_lstm_rescaled = future_predictions_rescaled.reshape(-1, 2)
+
+# Plotting the comparison of LSTM and linear regression predictions for BEV
+plt.figure(figsize=(16, 6))
+plt.plot(future_dates_linear, future_predictions_linear_rescaled[:, 0], label='Linear Regression BEV Sales Prediction', linestyle='--', color='red')
+plt.plot(future_dates, future_predictions_lstm_rescaled[:, 0], label='LSTM BEV Sales Prediction',  color='blue')
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+plt.title('BEV Sales Prediction Comparison (Linear Regression vs LSTM)')
+plt.xlabel('Date')
+plt.ylabel('Sales')
+plt.xticks(rotation=45)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# Plotting the comparison of LSTM and linear regression predictions for PHEV
+plt.figure(figsize=(16, 6))
+plt.plot(future_dates_linear, future_predictions_linear_rescaled[:, 1], label='Linear Regression PHEV Sales Prediction', linestyle='--',color='yellow')
+plt.plot(future_dates, future_predictions_lstm_rescaled[:, 1], label='LSTM PHEV Sales Prediction',  color='green')
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+plt.title('PHEV Sales Prediction Comparison (Linear Regression vs LSTM)')
 plt.xlabel('Date')
 plt.ylabel('Sales')
 plt.xticks(rotation=45)
